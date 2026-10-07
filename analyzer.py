@@ -5,23 +5,30 @@ from scapy.all import (
     TCP,
     UDP,
     ICMP,
-    DNS
+    ARP,
+    DNS,
 )
-
 import pandas as pd
 
 
 def load_packets(file_path):
     """
-    Load packets from a PCAP or PCAPNG file.
+    Load all packets from a PCAP or PCAPNG file.
+
+    Returns:
+        Scapy PacketList containing every successfully read packet.
     """
-    return rdpcap(file_path)
+    packets = rdpcap(file_path)
+    return packets
 
 
 def get_protocol(packet):
     """
-    Identify the transport-layer protocol.
+    Determine the primary network/transport protocol.
     """
+
+    if packet.haslayer(ARP):
+        return "ARP"
 
     if packet.haslayer(TCP):
         return "TCP"
@@ -32,59 +39,62 @@ def get_protocol(packet):
     if packet.haslayer(ICMP):
         return "ICMP"
 
-    return "OTHER"
+    if packet.haslayer(IPv6):
+        return "IPv6"
+
+    if packet.haslayer(IP):
+        return "IP"
+
+    return "Other"
 
 
 def get_application_protocol(packet):
     """
-    Identify application-level protocols
-    carried inside transport protocols.
+    Identify common application-layer protocols.
     """
 
     if packet.haslayer(DNS):
         return "DNS"
 
-    return "OTHER"
+    return ""
 
 
 def get_ip_addresses(packet):
     """
-    Extract source and destination IP addresses.
-    Supports IPv4 and IPv6.
+    Extract source and destination addresses from IPv4, IPv6 or ARP.
     """
 
+    source_ip = None
+    destination_ip = None
+
     if packet.haslayer(IP):
+        source_ip = packet[IP].src
+        destination_ip = packet[IP].dst
 
-        return (
-            packet[IP].src,
-            packet[IP].dst
-        )
+    elif packet.haslayer(IPv6):
+        source_ip = packet[IPv6].src
+        destination_ip = packet[IPv6].dst
 
-    if packet.haslayer(IPv6):
+    elif packet.haslayer(ARP):
+        source_ip = packet[ARP].psrc
+        destination_ip = packet[ARP].pdst
 
-        return (
-            packet[IPv6].src,
-            packet[IPv6].dst
-        )
-
-    return None, None
+    return source_ip, destination_ip
 
 
 def get_ports(packet):
     """
-    Extract source and destination ports.
+    Extract source and destination ports when available.
     """
 
     source_port = None
     destination_port = None
 
     if packet.haslayer(TCP):
-
         source_port = packet[TCP].sport
         destination_port = packet[TCP].dport
 
     elif packet.haslayer(UDP):
-
         source_port = packet[UDP].sport
         destination_port = packet[UDP].dport
 
@@ -93,158 +103,89 @@ def get_ports(packet):
 
 def analyze_packets(packets):
     """
-    Convert packets into a pandas DataFrame.
+    Convert every packet into a structured Pandas DataFrame.
+
+    IMPORTANT:
+    This function does NOT drop non-IP packets.
+
+    Therefore:
+        len(packets) == len(result_dataframe)
+
+    whenever every packet can be represented successfully.
     """
 
-    records = []
+    rows = []
 
-    for packet in packets:
+    for index, packet in enumerate(packets):
 
-        source_ip, destination_ip = get_ip_addresses(packet)
+        try:
+            source_ip, destination_ip = get_ip_addresses(packet)
+            source_port, destination_port = get_ports(packet)
 
-        source_port, destination_port = get_ports(packet)
+            protocol = get_protocol(packet)
+            application_protocol = get_application_protocol(packet)
 
-        transport_protocol = get_protocol(packet)
+            timestamp = float(packet.time)
 
-        application_protocol = get_application_protocol(packet)
+            packet_size = len(packet)
 
-        packet_size = len(packet)
+            rows.append(
+                {
+                    "packet_number": index + 1,
+                    "timestamp": timestamp,
+                    "source_ip": source_ip,
+                    "destination_ip": destination_ip,
+                    "source_port": source_port,
+                    "destination_port": destination_port,
+                    "protocol": protocol,
+                    "application_protocol": application_protocol,
+                    "packet_size": packet_size,
+                }
+            )
 
-        timestamp = float(packet.time)
+        except Exception:
+            # Even if a strange packet cannot be fully decoded,
+            # preserve it in the analysis table.
+            rows.append(
+                {
+                    "packet_number": index + 1,
+                    "timestamp": None,
+                    "source_ip": None,
+                    "destination_ip": None,
+                    "source_port": None,
+                    "destination_port": None,
+                    "protocol": "Other",
+                    "application_protocol": "",
+                    "packet_size": len(packet),
+                }
+            )
 
-        records.append({
+    df = pd.DataFrame(rows)
 
-            "timestamp": timestamp,
+    if df.empty:
+        return df
 
-            "source_ip": source_ip,
-
-            "destination_ip": destination_ip,
-
-            "source_port": source_port,
-
-            "destination_port": destination_port,
-
-            "protocol": transport_protocol,
-
-            "application_protocol": application_protocol,
-
-            "packet_size": packet_size
-
-        })
-
-    return pd.DataFrame(records)
-
-
-def protocol_statistics(df):
-    """
-    Calculate protocol counts and percentages.
-    """
-
-    counts = df["protocol"].value_counts()
-
-    percentages = (
-        df["protocol"]
-        .value_counts(normalize=True)
-        .mul(100)
-        .round(2)
+    # Convert timestamps to readable datetime values
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        unit="s",
+        errors="coerce",
     )
 
-    result = pd.DataFrame({
-
-        "packets": counts,
-
-        "percentage": percentages
-
-    })
-
-    return result
-
-
-def top_source_ips(df, limit=10):
-    """
-    Return the most active source IP addresses.
-    """
-
-    result = (
-        df["source_ip"]
-        .value_counts()
-        .head(limit)
-        .reset_index()
+    # Numeric columns
+    df["source_port"] = pd.to_numeric(
+        df["source_port"],
+        errors="coerce",
     )
 
-    result.columns = [
-        "ip",
-        "packets"
-    ]
-
-    return result
-
-
-def top_destination_ips(df, limit=10):
-    """
-    Return the most active destination IP addresses.
-    """
-
-    result = (
-        df["destination_ip"]
-        .value_counts()
-        .head(limit)
-        .reset_index()
+    df["destination_port"] = pd.to_numeric(
+        df["destination_port"],
+        errors="coerce",
     )
 
-    result.columns = [
-        "ip",
-        "packets"
-    ]
-
-    return result
-
-
-def top_destination_ports(df, limit=10):
-    """
-    Return the most frequently contacted destination ports.
-    """
-
-    ports = (
-        df["destination_port"]
-        .dropna()
+    df["packet_size"] = pd.to_numeric(
+        df["packet_size"],
+        errors="coerce",
     )
 
-    result = (
-        ports
-        .value_counts()
-        .head(limit)
-        .reset_index()
-    )
-
-    result.columns = [
-        "port",
-        "packets"
-    ]
-
-    return result
-
-
-def packet_statistics(df):
-    """
-    Calculate general packet statistics.
-    """
-
-    return {
-
-        "total_packets": len(df),
-
-        "average_packet_size": round(
-            df["packet_size"].mean(),
-            2
-        ),
-
-        "maximum_packet_size": int(
-            df["packet_size"].max()
-        ),
-
-        "minimum_packet_size": int(
-            df["packet_size"].min()
-        )
-
-    }
+    return df

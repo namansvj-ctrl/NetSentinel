@@ -1,19 +1,12 @@
-import streamlit as st
+import os
+import tempfile
+
 import pandas as pd
 import plotly.express as px
-import tempfile
-import os
+import streamlit as st
 
-from analyzer import (
-    load_packets,
-    analyze_packets,
-    protocol_statistics,
-    top_source_ips,
-    top_destination_ips,
-    packet_statistics,
-)
-
-from anomaly_detector import run_anomaly_detection
+from analyzer import load_packets, analyze_packets
+from anomaly_detector import detect_anomalies
 
 
 # ============================================================
@@ -21,7 +14,7 @@ from anomaly_detector import run_anomaly_detection
 # ============================================================
 
 st.set_page_config(
-    page_title="NetSentinel",
+    page_title="NetSentinel | Network Intelligence",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -29,794 +22,1211 @@ st.set_page_config(
 
 
 # ============================================================
-# PROFESSIONAL DARK THEME
+# FUTURISTIC THEME
 # ============================================================
 
 st.markdown(
     """
-<style>
+    <style>
 
-.stApp {
-    background-color: #0b0f14;
-    color: #e8edf3;
-}
+    /* ======================================================
+       GLOBAL
+       ====================================================== */
 
-.main .block-container {
-    max-width: 1450px;
-    padding-top: 2rem;
-    padding-bottom: 4rem;
-}
+    .stApp {
+        background:
+            radial-gradient(
+                circle at 80% 0%,
+                rgba(0, 200, 255, 0.055),
+                transparent 28%
+            ),
+            radial-gradient(
+                circle at 10% 20%,
+                rgba(90, 70, 255, 0.035),
+                transparent 25%
+            ),
+            #07090d;
+    }
 
-section[data-testid="stSidebar"] {
-    background-color: #0f141b;
-    border-right: 1px solid #202832;
-}
+    .main .block-container {
+        max-width: 1480px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
 
-div[data-testid="stMetric"] {
-    background-color: #11171f;
-    border: 1px solid #222c37;
-    border-radius: 14px;
-    padding: 18px;
-}
 
-div[data-testid="stMetricLabel"] {
-    color: #8793a1;
-}
+    /* ======================================================
+       TYPOGRAPHY
+       ====================================================== */
 
-div[data-testid="stMetricValue"] {
-    color: #f4f7fa;
-}
+    html,
+    body,
+    [class*="css"] {
+        font-family:
+            Inter,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            sans-serif;
+    }
 
-div[data-testid="stDataFrame"] {
-    border: 1px solid #222c37;
-    border-radius: 12px;
-    overflow: hidden;
-}
+    h1 {
+        font-size: 2.65rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -1.5px !important;
+    }
 
-button[data-baseweb="tab"] {
-    font-weight: 600;
-}
+    h2 {
+        font-size: 1.45rem !important;
+        font-weight: 650 !important;
+        letter-spacing: -0.5px !important;
+    }
 
-.net-status {
-    display: inline-block;
-    padding: 6px 11px;
-    border-radius: 999px;
-    background: #101b18;
-    border: 1px solid #1f4034;
-    color: #8ce1bd;
-    font-size: 12px;
-    font-weight: 600;
-}
+    h3 {
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+    }
 
-</style>
-""",
+    p,
+    label,
+    .stCaption {
+        color: #9299a6;
+    }
+
+
+    /* ======================================================
+       SIDEBAR
+       ====================================================== */
+
+    section[data-testid="stSidebar"] {
+        background:
+            linear-gradient(
+                180deg,
+                #090c11 0%,
+                #07090d 100%
+            );
+
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+
+    section[data-testid="stSidebar"] > div {
+        padding-top: 1.5rem;
+    }
+
+
+    /* ======================================================
+       METRIC CARDS
+       ====================================================== */
+
+    div[data-testid="stMetric"] {
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,0.045),
+                rgba(255,255,255,0.018)
+            );
+
+        border: 1px solid rgba(255,255,255,0.075);
+
+        border-radius: 14px;
+
+        padding: 1.15rem 1.25rem;
+
+        box-shadow:
+            0 8px 30px rgba(0,0,0,0.18);
+
+        transition:
+            transform 0.2s ease,
+            border-color 0.2s ease;
+    }
+
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+
+        border-color:
+            rgba(0, 210, 255, 0.25);
+
+        box-shadow:
+            0 10px 35px rgba(0,180,255,0.08);
+    }
+
+    div[data-testid="stMetricLabel"] {
+        color: #7f8997 !important;
+        font-size: 0.76rem !important;
+        text-transform: uppercase;
+        letter-spacing: 1.1px;
+        font-weight: 600;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #f2f6fb !important;
+        font-size: 1.8rem !important;
+        font-weight: 700 !important;
+    }
+
+
+    /* ======================================================
+       CONTAINERS
+       ====================================================== */
+
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background:
+            linear-gradient(
+                145deg,
+                rgba(255,255,255,0.035),
+                rgba(255,255,255,0.012)
+            );
+
+        border:
+            1px solid rgba(255,255,255,0.065);
+
+        border-radius: 16px;
+    }
+
+
+    /* ======================================================
+       BUTTONS
+       ====================================================== */
+
+    .stButton > button {
+        width: 100%;
+
+        border-radius: 9px;
+
+        border: 1px solid
+            rgba(0, 210, 255, 0.25);
+
+        background:
+            linear-gradient(
+                135deg,
+                rgba(0, 180, 255, 0.13),
+                rgba(80, 70, 255, 0.09)
+            );
+
+        color: #dff8ff;
+
+        font-weight: 600;
+
+        transition: all 0.2s ease;
+    }
+
+    .stButton > button:hover {
+        border-color:
+            rgba(0, 220, 255, 0.65);
+
+        background:
+            rgba(0, 200, 255, 0.14);
+
+        transform: translateY(-1px);
+    }
+
+
+    /* ======================================================
+       FILE UPLOADER
+       ====================================================== */
+
+    section[data-testid="stFileUploaderDropzone"] {
+        background:
+            rgba(255,255,255,0.018);
+
+        border:
+            1px dashed
+            rgba(0, 210, 255, 0.24);
+
+        border-radius: 12px;
+    }
+
+    section[data-testid="stFileUploaderDropzone"]:hover {
+        border-color:
+            rgba(0, 210, 255, 0.55);
+    }
+
+
+    /* ======================================================
+       TABS
+       ====================================================== */
+
+    button[data-baseweb="tab"] {
+        font-weight: 600;
+        color: #707987;
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #62dcff !important;
+    }
+
+    div[data-baseweb="tab-highlight"] {
+        background-color: #28c7f5 !important;
+    }
+
+
+    /* ======================================================
+       DATAFRAME
+       ====================================================== */
+
+    div[data-testid="stDataFrame"] {
+        border:
+            1px solid rgba(255,255,255,0.065);
+
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+
+    /* ======================================================
+       DIVIDERS
+       ====================================================== */
+
+    hr {
+        border-color:
+            rgba(255,255,255,0.06) !important;
+    }
+
+
+    /* ======================================================
+       ALERT COLORS
+       ====================================================== */
+
+    .high-text {
+        color: #ff5d6c;
+        font-weight: 700;
+    }
+
+    .medium-text {
+        color: #ffb84d;
+        font-weight: 700;
+    }
+
+    .low-text {
+        color: #54c7ff;
+        font-weight: 700;
+    }
+
+
+    /* ======================================================
+       BRAND
+       ====================================================== */
+
+    .brand-title {
+        font-size: 1.15rem;
+        font-weight: 750;
+        letter-spacing: 0.3px;
+        color: #edfaff;
+    }
+
+    .brand-subtitle {
+        font-size: 0.7rem;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: #66717e;
+    }
+
+    .status-dot {
+        color: #39e6a5;
+        font-size: 0.75rem;
+    }
+
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR BRAND
 # ============================================================
 
 with st.sidebar:
 
-    st.title("NetSentinel")
-
-    st.caption("Network Security Intelligence")
-
-    st.divider()
-
-    st.subheader("PCAP Analysis")
-
-    uploaded_file = st.file_uploader(
-        "Upload a PCAP / PCAPNG file",
-        type=["pcap", "pcapng"],
+    st.markdown(
+        """
+        <div class="brand-title">🛡️ NetSentinel</div>
+        <div class="brand-subtitle">Network Intelligence Platform</div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    st.caption(
-        "Upload a network capture to analyze packet behavior, "
-        "traffic patterns and potential security anomalies."
-    )
-
-
-# ============================================================
-# LANDING PAGE
-# ============================================================
-
-if uploaded_file is None:
-
-    st.title("🛡️ NetSentinel")
-
-    st.subheader(
-        "Network Traffic Analyzer & Anomaly Detection"
-    )
+    st.markdown("")
 
     st.markdown(
-        '<span class="net-status">● SYSTEM READY</span>',
+        '<span class="status-dot">●</span> ANALYSIS ENGINE READY',
         unsafe_allow_html=True,
     )
 
     st.divider()
 
+    st.markdown("### Capture")
+
+    uploaded_file = st.file_uploader(
+        "Upload network capture",
+        type=["pcap", "pcapng"],
+        help="Upload a PCAP or PCAPNG network capture.",
+    )
+
+    st.caption(
+        "Supported formats: PCAP · PCAPNG"
+    )
+
+    st.divider()
+
+    st.markdown("### Detection Engine")
+
+    st.markdown(
+        """
+        **PORT SCAN**  
+        Detects large-scale port enumeration.
+
+        **REQUEST RATE**  
+        Detects unusually high packet activity.
+
+        **SUSPICIOUS PORTS**  
+        Monitors commonly targeted services.
+        """
+    )
+
+    st.divider()
+
+    st.caption(
+        "NetSentinel v1.0 • Hackathon Prototype"
+    )
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "analysis_complete" not in st.session_state:
+    st.session_state.analysis_complete = False
+
+if "df" not in st.session_state:
+    st.session_state.df = None
+
+if "alerts" not in st.session_state:
+    st.session_state.alerts = None
+
+if "total_packets" not in st.session_state:
+    st.session_state.total_packets = 0
+
+if "file_signature" not in st.session_state:
+    st.session_state.file_signature = None
+
+
+# ============================================================
+# HERO
+# ============================================================
+
+hero_col1, hero_col2 = st.columns(
+    [4.8, 1.2]
+)
+
+with hero_col1:
+
+    st.markdown(
+        """
+        <div style="
+            color:#6d7785;
+            font-size:0.72rem;
+            font-weight:600;
+            letter-spacing:2px;
+            text-transform:uppercase;
+            margin-bottom:0.5rem;
+        ">
+            NETWORK SECURITY · TRAFFIC INTELLIGENCE
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("Network Intelligence Center")
+
+    st.caption(
+        "Transform raw packet captures into actionable network security intelligence."
+    )
+
+with hero_col2:
+
+    st.markdown(
+        """
+        <div style="
+            text-align:right;
+            padding-top:1.2rem;
+            color:#687481;
+            font-size:0.75rem;
+        ">
+        SYSTEM STATUS<br>
+        <span style="
+            color:#39e6a5;
+            font-weight:700;
+            letter-spacing:1px;
+        ">
+        ● OPERATIONAL
+        </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# PROCESS UPLOAD
+# ============================================================
+
+if uploaded_file is not None:
+
+    file_signature = (
+        uploaded_file.name,
+        uploaded_file.size,
+    )
+
+    if (
+        st.session_state.file_signature
+        != file_signature
+    ):
+
+        st.session_state.file_signature = (
+            file_signature
+        )
+
+        st.session_state.analysis_complete = False
+
+        temp_path = None
+
+        with st.spinner(
+            "Parsing capture and building network intelligence..."
+        ):
+
+            try:
+
+                suffix = (
+                    ".pcapng"
+                    if uploaded_file.name.lower().endswith(
+                        ".pcapng"
+                    )
+                    else ".pcap"
+                )
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=suffix,
+                ) as temp_file:
+
+                    temp_file.write(
+                        uploaded_file.getbuffer()
+                    )
+
+                    temp_path = temp_file.name
+
+                packets = load_packets(
+                    temp_path
+                )
+
+                total_packets = len(packets)
+
+                df = analyze_packets(
+                    packets
+                )
+
+                alerts = detect_anomalies(
+                    df
+                )
+
+                st.session_state.total_packets = (
+                    total_packets
+                )
+
+                st.session_state.analyzed_packets = (
+                    len(df)
+                )
+
+                st.session_state.df = df
+
+                st.session_state.alerts = alerts
+
+                st.session_state.analysis_complete = True
+
+            except Exception as e:
+
+                st.error(
+                    f"Analysis failed: {e}"
+                )
+
+                st.session_state.analysis_complete = False
+
+            finally:
+
+                if (
+                    temp_path
+                    and os.path.exists(temp_path)
+                ):
+
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+
+
+# ============================================================
+# EMPTY STATE
+# ============================================================
+
+if not st.session_state.analysis_complete:
+
+    st.divider()
+
     st.info(
-        "Upload a PCAP or PCAPNG file from the sidebar "
-        "to begin analysis."
+        "Upload a PCAP or PCAPNG capture from the sidebar to initialize the security analysis."
     )
 
-    st.markdown("### What NetSentinel analyzes")
+    st.markdown("### Analysis Pipeline")
 
-    col1, col2, col3 = st.columns(3)
+    pipeline = st.columns(5)
 
-    with col1:
-        st.metric(
-            "Traffic Analysis",
-            "Ready",
-        )
-        st.caption(
-            "Protocols, IPs, ports and packet statistics"
-        )
-
-    with col2:
-        st.metric(
-            "Anomaly Detection",
-            "Enabled",
-        )
-        st.caption(
-            "Suspicious traffic patterns and security alerts"
-        )
-
-    with col3:
-        st.metric(
-            "Export",
-            "CSV",
-        )
-        st.caption(
-            "Download analyzed packet information"
-        )
-
-    st.stop()
-
-
-# ============================================================
-# SAVE UPLOADED PCAP TEMPORARILY
-# ============================================================
-
-file_extension = os.path.splitext(
-    uploaded_file.name
-)[1]
-
-with tempfile.NamedTemporaryFile(
-    delete=False,
-    suffix=file_extension,
-) as temp_file:
-
-    temp_file.write(
-        uploaded_file.getbuffer()
-    )
-
-    temp_path = temp_file.name
-
-
-# ============================================================
-# LOAD PCAP
-# ============================================================
-
-try:
-
-    # Load the COMPLETE packet capture
-    packets = load_packets(temp_path)
-
-    # TRUE number of packets physically inside
-    # the uploaded PCAP/PCAPNG
-    total_capture_packets = len(packets)
-
-    # Convert packets to the analysis dataframe
-    df = analyze_packets(packets)
-
-except Exception as error:
-
-    st.error(
-        f"Unable to analyze the capture: {error}"
-    )
-
-    try:
-        os.remove(temp_path)
-    except OSError:
-        pass
-
-    st.stop()
-
-
-# Remove temporary file
-try:
-    os.remove(temp_path)
-except OSError:
-    pass
-
-
-# ============================================================
-# CHECK DATA
-# ============================================================
-
-if df.empty:
-
-    st.warning(
-        "No analyzable packets were found in this capture."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# PACKET COUNTS
-# ============================================================
-
-# Number of packets converted by analyzer.py
-analyzable_packets = len(df)
-
-
-# Current security engine works with packets that have
-# both source and destination IP addresses.
-df = df.dropna(
-    subset=[
-        "source_ip",
-        "destination_ip",
+    pipeline_data = [
+        ("01", "CAPTURE", "PCAP / PCAPNG"),
+        ("02", "PARSE", "Packet extraction"),
+        ("03", "PROFILE", "Traffic intelligence"),
+        ("04", "DETECT", "Anomaly rules"),
+        ("05", "INVESTIGATE", "Security insights"),
     ]
+
+    for column, item in zip(
+        pipeline,
+        pipeline_data,
+    ):
+
+        number, title, description = item
+
+        with column:
+
+            with st.container(
+                border=True
+            ):
+
+                st.caption(number)
+
+                st.markdown(
+                    f"**{title}**"
+                )
+
+                st.caption(
+                    description
+                )
+
+    st.stop()
+
+
+# ============================================================
+# DATA
+# ============================================================
+
+df = st.session_state.df
+alerts = st.session_state.alerts
+
+total_packets = (
+    st.session_state.total_packets
+)
+
+analyzed_packets = (
+    st.session_state.analyzed_packets
 )
 
 
-# Number of packets actually used by the current
-# IP-based traffic/security analysis
-ip_analyzable_packets = len(df)
+# ============================================================
+# CORE METRICS
+# ============================================================
+
+tcp_packets = int(
+    (df["protocol"] == "TCP").sum()
+)
+
+udp_packets = int(
+    (df["protocol"] == "UDP").sum()
+)
+
+icmp_packets = int(
+    (df["protocol"] == "ICMP").sum()
+)
+
+arp_packets = int(
+    (df["protocol"] == "ARP").sum()
+)
+
+ipv6_packets = int(
+    (df["protocol"] == "IPv6").sum()
+)
+
+dns_packets = int(
+    (df["application_protocol"] == "DNS").sum()
+)
+
+ip_packets = int(
+    (
+        df["source_ip"].notna()
+        & df["destination_ip"].notna()
+    ).sum()
+)
+
+high_alerts = int(
+    (
+        alerts["severity"] == "HIGH"
+    ).sum()
+) if not alerts.empty else 0
+
+medium_alerts = int(
+    (
+        alerts["severity"] == "MEDIUM"
+    ).sum()
+) if not alerts.empty else 0
+
+low_alerts = int(
+    (
+        alerts["severity"] == "LOW"
+    ).sum()
+) if not alerts.empty else 0
 
 
 # ============================================================
-# ANALYSIS
+# CAPTURE INFO
 # ============================================================
 
-stats = packet_statistics(df)
+with st.container(border=True):
 
-protocols = protocol_statistics(df)
-
-alerts = run_anomaly_detection(df)
-
-
-# ============================================================
-# ALERT COUNTS
-# ============================================================
-
-if alerts.empty:
-
-    high_alerts = 0
-    medium_alerts = 0
-    low_alerts = 0
-
-else:
-
-    high_alerts = int(
-        (
-            alerts["severity"] == "HIGH"
-        ).sum()
+    info1, info2, info3 = st.columns(
+        [2.5, 1, 1]
     )
 
-    medium_alerts = int(
-        (
-            alerts["severity"] == "MEDIUM"
-        ).sum()
-    )
+    with info1:
 
-    low_alerts = int(
-        (
-            alerts["severity"] == "LOW"
-        ).sum()
-    )
+        st.caption("ACTIVE CAPTURE")
+
+        st.markdown(
+            f"**{uploaded_file.name}**"
+        )
+
+    with info2:
+
+        st.caption("PACKET COVERAGE")
+
+        st.markdown(
+            f"**{analyzed_packets:,} / {total_packets:,}**"
+        )
+
+    with info3:
+
+        st.caption("IP VISIBILITY")
+
+        st.markdown(
+            f"**{ip_packets:,} packets**"
+        )
 
 
-# ============================================================
-# TCP / UDP PERCENTAGES
-# ============================================================
-
-tcp_percentage = (
-    float(
-        protocols.loc[
-            "TCP",
-            "percentage"
-        ]
-    )
-    if "TCP" in protocols.index
-    else 0
-)
-
-udp_percentage = (
-    float(
-        protocols.loc[
-            "UDP",
-            "percentage"
-        ]
-    )
-    if "UDP" in protocols.index
-    else 0
-)
+st.markdown("")
 
 
 # ============================================================
-# HEADER
+# TOP METRICS
 # ============================================================
 
-st.title("🛡️ NetSentinel")
+m1, m2, m3, m4, m5 = st.columns(5)
 
-st.subheader(
-    "Network Traffic Analyzer & Anomaly Detection"
-)
-
-st.markdown(
-    '<span class="net-status">● ANALYSIS COMPLETE</span>',
-    unsafe_allow_html=True,
-)
-
-st.caption(
-    f"Capture: **{uploaded_file.name}** · "
-    f"**{total_capture_packets:,} total packets** · "
-    f"**{ip_analyzable_packets:,} analyzed packets** · "
-    f"**{len(alerts)} security alerts**"
-)
-
-st.divider()
-
-
-# ============================================================
-# NETWORK OVERVIEW
-# ============================================================
-
-st.markdown("### Network Overview")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-
-with col1:
+with m1:
 
     st.metric(
-        "Total Packets",
-        f"{total_capture_packets:,}",
-        help=(
-            "Total number of packets physically "
-            "present in the uploaded PCAP/PCAPNG."
-        ),
+        "TOTAL PACKETS",
+        f"{total_packets:,}",
     )
 
-
-with col2:
+with m2:
 
     st.metric(
-        "Analyzable Packets",
-        f"{ip_analyzable_packets:,}",
-        help=(
-            "Packets containing the IP information "
-            "used by the current traffic analysis."
-        ),
+        "ANALYZED",
+        f"{analyzed_packets:,}",
     )
 
-
-with col3:
+with m3:
 
     st.metric(
-        "TCP Traffic",
-        f"{tcp_percentage:.1f}%",
+        "TCP",
+        f"{tcp_packets:,}",
     )
 
-
-with col4:
+with m4:
 
     st.metric(
-        "UDP Traffic",
-        f"{udp_percentage:.1f}%",
+        "UDP",
+        f"{udp_packets:,}",
     )
 
-
-with col5:
+with m5:
 
     st.metric(
-        "Security Alerts",
+        "ALERTS",
         f"{len(alerts):,}",
     )
+
+
+st.markdown("")
 
 
 # ============================================================
 # TABS
 # ============================================================
 
-overview_tab, traffic_tab, security_tab, packets_tab = st.tabs(
+overview_tab, traffic_tab, alerts_tab, explorer_tab = st.tabs(
     [
-        "Overview",
-        "Traffic",
-        "Security",
-        "Packets",
+        "◈  OVERVIEW",
+        "⌁  TRAFFIC",
+        "⚠  SECURITY",
+        "⌕  PACKET EXPLORER",
     ]
 )
 
 
 # ============================================================
-# OVERVIEW TAB
+# OVERVIEW
 # ============================================================
 
 with overview_tab:
 
-    st.markdown("### Protocol Distribution")
+    st.markdown("### Traffic Overview")
 
-    protocol_chart_data = protocols.reset_index()
+    chart1, chart2 = st.columns(2)
 
-    protocol_chart_data.columns = [
-        "protocol",
-        "packets",
-        "percentage",
-    ]
+    with chart1:
 
-    fig_protocol = px.pie(
-        protocol_chart_data,
-        names="protocol",
-        values="packets",
-        hole=0.62,
+        with st.container(
+            border=True
+        ):
+
+            st.markdown(
+                "**Protocol Distribution**"
+            )
+
+            protocol_data = (
+                df["protocol"]
+                .value_counts()
+                .reset_index()
+            )
+
+            protocol_data.columns = [
+                "protocol",
+                "packets",
+            ]
+
+            fig = px.pie(
+                protocol_data,
+                names="protocol",
+                values="packets",
+                hole=0.58,
+            )
+
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(
+                    l=10,
+                    r=10,
+                    t=20,
+                    b=10,
+                ),
+                legend=dict(
+                    orientation="h",
+                    y=-0.08,
+                ),
+            )
+
+            fig.update_traces(
+                textposition="inside",
+                textinfo="percent",
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+            )
+
+
+    with chart2:
+
+        with st.container(
+            border=True
+        ):
+
+            st.markdown(
+                "**Packet Size Distribution**"
+            )
+
+            fig = px.histogram(
+                df,
+                x="packet_size",
+                nbins=35,
+            )
+
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                margin=dict(
+                    l=10,
+                    r=10,
+                    t=20,
+                    b=10,
+                ),
+                xaxis_title="Packet Size (bytes)",
+                yaxis_title="Packets",
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+            )
+
+
+    st.markdown("### Traffic Composition")
+
+    composition = pd.DataFrame(
+        {
+            "Protocol": [
+                "TCP",
+                "UDP",
+                "ICMP",
+                "ARP",
+                "IPv6",
+                "DNS",
+            ],
+            "Packets": [
+                tcp_packets,
+                udp_packets,
+                icmp_packets,
+                arp_packets,
+                ipv6_packets,
+                dns_packets,
+            ],
+        }
     )
 
-    fig_protocol.update_traces(
-        textposition="inside",
-        textinfo="percent+label",
+    st.dataframe(
+        composition,
+        use_container_width=True,
+        hide_index=True,
     )
-
-    fig_protocol.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(
-            l=10,
-            r=10,
-            t=20,
-            b=10,
-        ),
-        legend=dict(
-            orientation="h",
-            y=-0.05,
-        ),
-    )
-
-    st.plotly_chart(
-        fig_protocol,
-        width="stretch",
-    )
-
-
-    # --------------------------------------------------------
-    # PACKET STATISTICS
-    # --------------------------------------------------------
-
-    st.markdown("### Analyzed Packet Statistics")
-
-    col1, col2, col3 = st.columns(3)
-
-
-    with col1:
-
-        st.metric(
-            "Average Packet Size",
-            f"{stats['average_packet_size']} bytes",
-        )
-
-
-    with col2:
-
-        st.metric(
-            "Largest Packet",
-            f"{stats['maximum_packet_size']} bytes",
-        )
-
-
-    with col3:
-
-        st.metric(
-            "Smallest Packet",
-            f"{stats['minimum_packet_size']} bytes",
-        )
 
 
 # ============================================================
-# TRAFFIC TAB
+# TRAFFIC ANALYSIS
 # ============================================================
 
 with traffic_tab:
 
-    st.markdown("### Network Traffic")
-
-    st.caption(
-        "Identify the most active sources, destinations "
-        "and services in the analyzed traffic."
-    )
-
-
-    # --------------------------------------------------------
-    # TOP SOURCE / DESTINATION IPs
-    # --------------------------------------------------------
-
-    source_data = top_source_ips(df)
-
-    destination_data = top_destination_ips(df)
-
-    col1, col2 = st.columns(2)
-
-
-    with col1:
-
-        st.markdown("#### Top Source IPs")
-
-        fig_source = px.bar(
-            source_data,
-            x="ip",
-            y="packets",
-        )
-
-        fig_source.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(
-                l=10,
-                r=10,
-                t=10,
-                b=10,
-            ),
-            xaxis_title=None,
-            yaxis_title="Packets",
-        )
-
-        st.plotly_chart(
-            fig_source,
-            width="stretch",
-        )
-
-
-    with col2:
-
-        st.markdown("#### Top Destination IPs")
-
-        fig_destination = px.bar(
-            destination_data,
-            x="ip",
-            y="packets",
-        )
-
-        fig_destination.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(
-                l=10,
-                r=10,
-                t=10,
-                b=10,
-            ),
-            xaxis_title=None,
-            yaxis_title="Packets",
-        )
-
-        st.plotly_chart(
-            fig_destination,
-            width="stretch",
-        )
-
-
-    # --------------------------------------------------------
-    # MOST FREQUENTLY CONTACTED PORTS
-    # --------------------------------------------------------
-
-    st.markdown(
-        "### Most Frequently Contacted Ports"
-    )
-
-    # Build port statistics directly from the dataframe.
-    # This avoids the previous port-chart rendering problem.
+    st.markdown("### Traffic Analysis")
 
     port_data = (
         df[
+            df["destination_port"].notna()
+        ][
             ["destination_port"]
         ]
-        .dropna()
         .copy()
     )
 
-
-    port_data["destination_port"] = pd.to_numeric(
-        port_data["destination_port"],
-        errors="coerce",
-    )
-
-
-    port_data = port_data.dropna(
-        subset=["destination_port"]
-    )
-
-
-    port_data = (
-        port_data
-        .groupby("destination_port")
-        .size()
-        .reset_index(
-            name="packets"
-        )
-        .sort_values(
-            "packets",
-            ascending=False,
-        )
-        .head(10)
-    )
-
-
-    # Convert ports to strings so Plotly treats
-    # them as categories instead of a continuous axis.
-
-    port_data["destination_port"] = (
-        port_data["destination_port"]
-        .astype(int)
-        .astype(str)
-    )
-
-
     if not port_data.empty:
 
-        fig_ports = px.bar(
-            port_data,
-            x="destination_port",
-            y="packets",
-            text="packets",
+        port_data[
+            "destination_port"
+        ] = pd.to_numeric(
+            port_data[
+                "destination_port"
+            ],
+            errors="coerce",
         )
 
-        fig_ports.update_traces(
-            textposition="outside"
+        port_data = port_data.dropna(
+            subset=["destination_port"]
         )
 
-        fig_ports.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(
-                l=10,
-                r=10,
-                t=30,
-                b=10,
-            ),
-            xaxis_title="Destination Port",
-            yaxis_title="Packets",
-            xaxis=dict(
-                type="category"
-            ),
+        port_data = (
+            port_data
+            .groupby("destination_port")
+            .size()
+            .reset_index(
+                name="packets"
+            )
+            .sort_values(
+                "packets",
+                ascending=False,
+            )
+            .head(10)
         )
 
-        st.plotly_chart(
-            fig_ports,
-            width="stretch",
+        port_data[
+            "destination_port"
+        ] = (
+            port_data[
+                "destination_port"
+            ]
+            .astype(int)
+            .astype(str)
         )
+
+        with st.container(
+            border=True
+        ):
+
+            st.markdown(
+                "**Most Frequently Contacted Ports**"
+            )
+
+            fig = px.bar(
+                port_data,
+                x="destination_port",
+                y="packets",
+                text="packets",
+            )
+
+            fig.update_traces(
+                textposition="outside"
+            )
+
+            fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(
+                    type="category"
+                ),
+                margin=dict(
+                    l=20,
+                    r=20,
+                    t=25,
+                    b=20,
+                ),
+            )
+
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+            )
 
     else:
 
         st.info(
-            "No destination port information "
-            "was found in the analyzed traffic."
+            "No TCP/UDP destination ports detected."
         )
 
 
+    st.markdown("### Network Endpoints")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+
+        with st.container(
+            border=True
+        ):
+
+            st.markdown(
+                "**Top Source IPs**"
+            )
+
+            source_data = (
+                df["source_ip"]
+                .dropna()
+                .value_counts()
+                .head(10)
+                .reset_index()
+            )
+
+            source_data.columns = [
+                "source_ip",
+                "packets",
+            ]
+
+            st.dataframe(
+                source_data,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with c2:
+
+        with st.container(
+            border=True
+        ):
+
+            st.markdown(
+                "**Top Destination IPs**"
+            )
+
+            destination_data = (
+                df["destination_ip"]
+                .dropna()
+                .value_counts()
+                .head(10)
+                .reset_index()
+            )
+
+            destination_data.columns = [
+                "destination_ip",
+                "packets",
+            ]
+
+            st.dataframe(
+                destination_data,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
 # ============================================================
-# SECURITY TAB
+# SECURITY
 # ============================================================
 
-with security_tab:
+with alerts_tab:
 
-    st.markdown("### Security Intelligence")
+    st.markdown("### Security Command Center")
 
     st.caption(
-        "Detected anomalies and potential security "
-        "events identified from the capture."
+        "Rule-based detection results generated from the active capture."
     )
 
+    a1, a2, a3 = st.columns(3)
 
-    col1, col2, col3 = st.columns(3)
-
-
-    with col1:
+    with a1:
 
         st.metric(
-            "High Risk",
+            "HIGH",
             high_alerts,
         )
 
-
-    with col2:
+    with a2:
 
         st.metric(
-            "Medium Risk",
+            "MEDIUM",
             medium_alerts,
         )
 
-
-    with col3:
+    with a3:
 
         st.metric(
-            "Low Risk",
+            "LOW",
             low_alerts,
         )
 
 
-    st.divider()
+    st.markdown("")
 
 
     if alerts.empty:
 
-        st.success(
-            "No suspicious activity detected."
-        )
+        with st.container(
+            border=True
+        ):
+
+            st.success(
+                "No suspicious activity detected by the current detection rules."
+            )
 
     else:
 
         for _, alert in alerts.iterrows():
 
-            severity = str(
-                alert["severity"]
-            ).upper()
+            severity = alert[
+                "severity"
+            ]
 
             if severity == "HIGH":
 
-                st.error(
-                    f"🔴 {severity} · "
-                    f"{alert['type']}\n\n"
-                    f"{alert['description']}"
-                )
+                icon = "🔴"
 
             elif severity == "MEDIUM":
 
-                st.warning(
-                    f"🟠 {severity} · "
-                    f"{alert['type']}\n\n"
-                    f"{alert['description']}"
-                )
+                icon = "🟠"
 
             else:
 
-                st.info(
-                    f"🔵 {severity} · "
-                    f"{alert['type']}\n\n"
-                    f"{alert['description']}"
+                icon = "🔵"
+
+            with st.container(
+                border=True
+            ):
+
+                left, right = st.columns(
+                    [4, 1]
                 )
 
+                with left:
 
-        st.markdown("### Alert Details")
+                    st.markdown(
+                        f"### {icon} {severity} · {alert['alert_type']}"
+                    )
 
-        st.dataframe(
-            alerts,
-            width="stretch",
-            hide_index=True,
+                    st.write(
+                        alert["details"]
+                    )
+
+                with right:
+
+                    st.caption(
+                        "SOURCE"
+                    )
+
+                    st.code(
+                        str(
+                            alert[
+                                "source_ip"
+                            ]
+                        )
+                    )
+
+                    st.caption(
+                        "DESTINATION"
+                    )
+
+                    st.code(
+                        str(
+                            alert[
+                                "destination_ip"
+                            ]
+                        )
+                    )
+
+
+        st.download_button(
+            "↓  Export Security Alerts",
+            data=alerts.to_csv(
+                index=False
+            ).encode("utf-8"),
+            file_name=(
+                "netsentinel_security_alerts.csv"
+            ),
+            mime="text/csv",
         )
 
 
 # ============================================================
-# PACKET EXPLORER TAB
+# PACKET EXPLORER
 # ============================================================
 
-with packets_tab:
+with explorer_tab:
 
-    st.markdown("### Packet Explorer")
-
-    st.caption(
-        "Inspect the parsed packet-level information."
+    st.markdown(
+        "### Packet-Level Investigation"
     )
 
+    st.caption(
+        "Filter and inspect individual packets from the analyzed capture."
+    )
 
-    # --------------------------------------------------------
-    # FILTERS
-    # --------------------------------------------------------
+    f1, f2, f3 = st.columns(3)
 
-    col1, col2 = st.columns(2)
+    with f1:
 
-
-    with col1:
-
-        protocol_options = sorted(
+        protocols = sorted(
             df["protocol"]
             .dropna()
             .unique()
@@ -825,16 +1235,16 @@ with packets_tab:
 
         selected_protocols = st.multiselect(
             "Protocol",
-            protocol_options,
-            default=protocol_options,
+            protocols,
+            default=protocols,
         )
 
-
-    with col2:
+    with f2:
 
         source_options = sorted(
             df["source_ip"]
             .dropna()
+            .astype(str)
             .unique()
             .tolist()
         )
@@ -842,57 +1252,106 @@ with packets_tab:
         selected_sources = st.multiselect(
             "Source IP",
             source_options,
-            default=source_options,
+        )
+
+    with f3:
+
+        destination_options = sorted(
+            df["destination_ip"]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+        )
+
+        selected_destinations = st.multiselect(
+            "Destination IP",
+            destination_options,
         )
 
 
-    # --------------------------------------------------------
-    # FILTER
-    # --------------------------------------------------------
+    filtered_df = df.copy()
 
-    filtered_df = df[
-        df["protocol"].isin(
-            selected_protocols
+
+    if selected_protocols:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "protocol"
+            ].isin(
+                selected_protocols
+            )
+        ]
+
+
+    if selected_sources:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "source_ip"
+            ]
+            .astype(str)
+            .isin(
+                selected_sources
+            )
+        ]
+
+
+    if selected_destinations:
+
+        filtered_df = filtered_df[
+            filtered_df[
+                "destination_ip"
+            ]
+            .astype(str)
+            .isin(
+                selected_destinations
+            )
+        ]
+
+
+    with st.container(
+        border=True
+    ):
+
+        st.markdown(
+            f"**{len(filtered_df):,}** packets displayed "
+            f"out of **{len(df):,}** analyzed"
         )
-        &
-        df["source_ip"].isin(
-            selected_sources
+
+        display_columns = [
+            "packet_number",
+            "timestamp",
+            "source_ip",
+            "destination_ip",
+            "source_port",
+            "destination_port",
+            "protocol",
+            "application_protocol",
+            "packet_size",
+        ]
+
+        st.dataframe(
+            filtered_df[
+                display_columns
+            ],
+            use_container_width=True,
+            height=520,
+            hide_index=True,
         )
-    ]
 
 
-    st.caption(
-        f"Showing {len(filtered_df):,} "
-        f"of {len(df):,} analyzed packets"
-    )
-
-
-    # --------------------------------------------------------
-    # DATA TABLE
-    # --------------------------------------------------------
-
-    st.dataframe(
-        filtered_df.head(1000),
-        width="stretch",
-        hide_index=True,
-    )
-
-
-    # --------------------------------------------------------
-    # CSV EXPORT
-    # --------------------------------------------------------
-
-    csv_data = (
-        filtered_df
-        .to_csv(index=False)
-        .encode("utf-8")
-    )
+    csv_data = filtered_df.to_csv(
+        index=False
+    ).encode("utf-8")
 
 
     st.download_button(
-        label="Export filtered packet data",
+        "↓  Export Filtered Packet Data",
         data=csv_data,
-        file_name="netsentinel_packet_analysis.csv",
+        file_name=(
+            "netsentinel_packets.csv"
+        ),
         mime="text/csv",
     )
 
@@ -903,6 +1362,18 @@ with packets_tab:
 
 st.divider()
 
-st.caption(
-    "NETSENTINEL · NETWORK SECURITY INTELLIGENCE · HACKATHON PS9"
+footer1, footer2 = st.columns(
+    [4, 1]
 )
+
+with footer1:
+
+    st.caption(
+        "NETSENTINEL  •  Network Traffic Intelligence"
+    )
+
+with footer2:
+
+    st.caption(
+        "PCAP / PCAPNG  •  v1.0"
+    )
