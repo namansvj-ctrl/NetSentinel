@@ -20,11 +20,8 @@ def load_packets(file_path):
 
 def get_protocol(packet):
     """
-    Identify the main protocol present in a packet.
+    Identify the transport-layer protocol.
     """
-
-    if packet.haslayer(DNS):
-        return "DNS"
 
     if packet.haslayer(TCP):
         return "TCP"
@@ -34,6 +31,18 @@ def get_protocol(packet):
 
     if packet.haslayer(ICMP):
         return "ICMP"
+
+    return "OTHER"
+
+
+def get_application_protocol(packet):
+    """
+    Identify application-level protocols
+    carried inside transport protocols.
+    """
+
+    if packet.haslayer(DNS):
+        return "DNS"
 
     return "OTHER"
 
@@ -95,7 +104,9 @@ def analyze_packets(packets):
 
         source_port, destination_port = get_ports(packet)
 
-        protocol = get_protocol(packet)
+        transport_protocol = get_protocol(packet)
+
+        application_protocol = get_application_protocol(packet)
 
         packet_size = len(packet)
 
@@ -113,7 +124,9 @@ def analyze_packets(packets):
 
             "destination_port": destination_port,
 
-            "protocol": protocol,
+            "protocol": transport_protocol,
+
+            "application_protocol": application_protocol,
 
             "packet_size": packet_size
 
